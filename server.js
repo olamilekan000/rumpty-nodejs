@@ -27,7 +27,7 @@ app.get("/", (_req, res) => {
   <body>
     <main>
       <span class="badge">Dockerfile build online</span>
-      <h1>Rumpty Node</h1>
+      <h1>Rumpty Node v1</h1>
       <p>This app is intentionally small and should test the Dockerfile build path, not Auto detection. It listens on <code>PORT</code> and exposes a health endpoint.</p>
       <dl>
         <dt>Started</dt><dd>${startedAt}</dd>
