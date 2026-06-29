@@ -9,6 +9,7 @@ const workload = {
   memoryMb: numberFromEnv("WORKLOAD_MEMORY_MB", 96),
   networkKb: numberFromEnv("WORKLOAD_NETWORK_KB", 256),
   intervalMs: numberFromEnv("WORKLOAD_INTERVAL_MS", 1500),
+  logIntervalMs: numberFromEnv("WORKLOAD_LOG_INTERVAL_MS", 5000),
 };
 
 const memoryStore = [];
@@ -43,17 +44,41 @@ function makePayload(sizeKb) {
   return Buffer.alloc(size, "r").toString("base64");
 }
 
+function bytesToMb(value) {
+  return Math.round((value / 1024 / 1024) * 100) / 100;
+}
+
+function logWorkload(event) {
+  const mem = process.memoryUsage();
+  console.log(JSON.stringify({
+    event,
+    workload_runs: workloadRuns,
+    cpu_burst_ms: workload.cpuMs,
+    memory_target_mb: workload.memoryMb,
+    interval_ms: workload.intervalMs,
+    rss_mb: bytesToMb(mem.rss),
+    heap_used_mb: bytesToMb(mem.heapUsed),
+    external_mb: bytesToMb(mem.external),
+    last_workload_at: lastWorkloadAt,
+    checksum: Math.round(lastChecksum),
+  }));
+}
+
 function runWorkload() {
   if (!workload.enabled) return;
   workloadRuns += 1;
   lastWorkloadAt = new Date().toISOString();
   burnCpu(workload.cpuMs);
   churnMemory(workload.memoryMb);
+  if (workloadRuns === 1 || workloadRuns % 10 === 0) {
+    logWorkload("workload-cycle");
+  }
 }
 
 if (workload.enabled) {
   runWorkload();
   setInterval(runWorkload, workload.intervalMs).unref();
+  setInterval(() => logWorkload("workload-heartbeat"), workload.logIntervalMs).unref();
 }
 
 app.get("/", (_req, res) => {
@@ -117,6 +142,12 @@ app.get("/status", (_req, res) => {
 });
 
 app.get("/payload", (_req, res) => {
+  console.log(JSON.stringify({
+    event: "payload-generated",
+    size_kb: workload.networkKb,
+    workload_runs: workloadRuns,
+    generated_at: new Date().toISOString(),
+  }));
   res.json({
     generated_at: new Date().toISOString(),
     size_kb: workload.networkKb,
@@ -127,4 +158,5 @@ app.get("/payload", (_req, res) => {
 app.listen(port, "0.0.0.0", () => {
   console.log(`rumpty-node listening on ${port}`);
   console.log(`workload ${workload.enabled ? "enabled" : "disabled"}: cpu=${workload.cpuMs}ms memory=${workload.memoryMb}MB interval=${workload.intervalMs}ms`);
+  logWorkload("server-started");
 });
