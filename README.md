@@ -29,7 +29,12 @@ WORKLOAD_MEMORY_MB=96
 WORKLOAD_NETWORK_KB=256
 WORKLOAD_INTERVAL_MS=1500
 WORKLOAD_LOG_INTERVAL_MS=5000
+WORKLOAD_MEMORY_HIGH_WATERMARK=0.82
+WORKLOAD_MEMORY_COOLDOWN_RUNS=6
 ```
+
+When memory usage crosses the high watermark, the app releases most of its
+allocated buffers, logs the cooldown, then starts ramping up again.
 
 ## Docker
 

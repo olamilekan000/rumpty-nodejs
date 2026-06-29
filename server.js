@@ -1,4 +1,5 @@
 import express from "express";
+import { readFileSync } from "node:fs";
 
 const app = express();
 const port = Number(process.env.PORT || 8080);
@@ -10,12 +11,17 @@ const workload = {
   networkKb: numberFromEnv("WORKLOAD_NETWORK_KB", 256),
   intervalMs: numberFromEnv("WORKLOAD_INTERVAL_MS", 1500),
   logIntervalMs: numberFromEnv("WORKLOAD_LOG_INTERVAL_MS", 5000),
+  memoryHighWatermark: numberFromEnv("WORKLOAD_MEMORY_HIGH_WATERMARK", 0.82),
+  memoryCooldownRuns: numberFromEnv("WORKLOAD_MEMORY_COOLDOWN_RUNS", 6),
 };
 
 const memoryStore = [];
 let workloadRuns = 0;
 let lastWorkloadAt = "";
 let lastChecksum = 0;
+let workloadPhase = "ramping";
+let cooldownUntilRun = 0;
+const memoryLimitBytes = detectMemoryLimitBytes();
 
 function numberFromEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -33,6 +39,17 @@ function burnCpu(durationMs) {
 }
 
 function churnMemory(sizeMb) {
+  if (shouldCoolDownMemory()) {
+    releaseMemoryPressure();
+    return;
+  }
+  if (workloadPhase === "cooling" && workloadRuns < cooldownUntilRun) {
+    return;
+  }
+  if (workloadPhase === "cooling") {
+    workloadPhase = "ramping";
+    logWorkload("memory-ramp-resumed");
+  }
   const bytes = Math.max(1, Math.floor(sizeMb)) * 1024 * 1024;
   const chunk = Buffer.alloc(bytes, workloadRuns % 255);
   memoryStore.push(chunk);
@@ -48,13 +65,62 @@ function bytesToMb(value) {
   return Math.round((value / 1024 / 1024) * 100) / 100;
 }
 
+function detectMemoryLimitBytes() {
+  const paths = [
+    "/sys/fs/cgroup/memory.max",
+    "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+  ];
+  for (const path of paths) {
+    try {
+      const raw = readFileSync(path, "utf8").trim();
+      if (!raw || raw === "max") continue;
+      const value = Number(raw);
+      if (Number.isFinite(value) && value > 0 && value < Number.MAX_SAFE_INTEGER) {
+        return value;
+      }
+    } catch {
+      // The file differs between cgroup versions; ignore missing paths.
+    }
+  }
+  return 0;
+}
+
+function memoryUsageRatio() {
+  if (!memoryLimitBytes) return 0;
+  return process.memoryUsage().rss / memoryLimitBytes;
+}
+
+function shouldCoolDownMemory() {
+  return memoryLimitBytes > 0 && memoryUsageRatio() >= workload.memoryHighWatermark;
+}
+
+function releaseMemoryPressure() {
+  if (workloadPhase === "cooling") return;
+  const before = process.memoryUsage().rss;
+  memoryStore.splice(0, Math.max(0, memoryStore.length - 1));
+  workloadPhase = "cooling";
+  cooldownUntilRun = workloadRuns + workload.memoryCooldownRuns;
+  logWorkload("memory-high-watermark");
+  console.log(JSON.stringify({
+    event: "memory-pressure-released",
+    rss_before_mb: bytesToMb(before),
+    rss_after_mb: bytesToMb(process.memoryUsage().rss),
+    memory_limit_mb: memoryLimitBytes ? bytesToMb(memoryLimitBytes) : null,
+    high_watermark: workload.memoryHighWatermark,
+    cooldown_until_run: cooldownUntilRun,
+  }));
+}
+
 function logWorkload(event) {
   const mem = process.memoryUsage();
   console.log(JSON.stringify({
     event,
+    phase: workloadPhase,
     workload_runs: workloadRuns,
     cpu_burst_ms: workload.cpuMs,
     memory_target_mb: workload.memoryMb,
+    memory_limit_mb: memoryLimitBytes ? bytesToMb(memoryLimitBytes) : null,
+    memory_usage_percent: memoryLimitBytes ? Math.round(memoryUsageRatio() * 10000) / 100 : null,
     interval_ms: workload.intervalMs,
     rss_mb: bytesToMb(mem.rss),
     heap_used_mb: bytesToMb(mem.heapUsed),
@@ -113,6 +179,8 @@ app.get("/", (_req, res) => {
         <dt>Workload</dt><dd>${workload.enabled ? "enabled" : "disabled"}</dd>
         <dt>Runs</dt><dd>${workloadRuns}</dd>
         <dt>Memory target</dt><dd>${workload.memoryMb} MB</dd>
+        <dt>Memory limit</dt><dd>${memoryLimitBytes ? `${bytesToMb(memoryLimitBytes)} MB` : "not detected"}</dd>
+        <dt>Phase</dt><dd>${workloadPhase}</dd>
         <dt>CPU burst</dt><dd>${workload.cpuMs} ms every ${workload.intervalMs} ms</dd>
       </dl>
     </main>
@@ -132,6 +200,9 @@ app.get("/status", (_req, res) => {
     workload,
     workload_runs: workloadRuns,
     last_workload_at: lastWorkloadAt,
+    workload_phase: workloadPhase,
+    memory_limit_bytes: memoryLimitBytes,
+    memory_usage_percent: memoryLimitBytes ? Math.round(memoryUsageRatio() * 10000) / 100 : null,
     checksum: Math.round(lastChecksum),
     memory: {
       rss: mem.rss,
