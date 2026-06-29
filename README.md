@@ -1,6 +1,8 @@
 # Rumpty Node Docker Test
 
-Small Node.js app for testing Rumpty Dockerfile deployments.
+Small Node.js app for testing Rumpty Dockerfile deployments and runtime metrics.
+
+The app runs a steady background workload so CPU and memory usage show up in Rumpty.
 
 ## Local
 
@@ -10,6 +12,23 @@ npm run dev
 ```
 
 Open http://localhost:8080.
+
+Useful routes:
+
+```bash
+curl http://localhost:8080/status
+curl http://localhost:8080/payload
+```
+
+Workload knobs:
+
+```bash
+WORKLOAD_ENABLED=true
+WORKLOAD_CPU_MS=180
+WORKLOAD_MEMORY_MB=96
+WORKLOAD_NETWORK_KB=256
+WORKLOAD_INTERVAL_MS=1500
+```
 
 ## Docker
 
