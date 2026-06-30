@@ -172,7 +172,7 @@ app.get("/", (_req, res) => {
     <main>
       <span class="badge">Dockerfile build online</span>
       <h1>Rumpty Node v1</h1>
-      <p>This app runs a steady background workload so Rumpty deployment metrics have visible CPU and memory activity. It also pins an intentionally vulnerable dependency so Rumpty security scans have something to report.</p>
+      <p>v1 This app runs a steady background workload so Rumpty deployment metrics have visible CPU and memory activity. It also pins an intentionally vulnerable dependency so Rumpty security scans have something to report.</p>
       <dl>
         <dt>Started</dt><dd>${startedAt}</dd>
         <dt>Node</dt><dd>${process.version}</dd>
