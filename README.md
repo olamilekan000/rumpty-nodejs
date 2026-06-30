@@ -3,6 +3,8 @@
 Small Node.js app for testing Rumpty Dockerfile deployments and runtime metrics.
 
 The app runs a steady background workload so CPU and memory usage show up in Rumpty.
+It also pins an intentionally vulnerable `lodash` version so Rumpty security
+scan reports have package findings to display.
 
 ## Local
 
@@ -18,6 +20,7 @@ Useful routes:
 ```bash
 curl http://localhost:8080/status
 curl http://localhost:8080/payload
+curl http://localhost:8080/vulnerable-demo
 ```
 
 Workload knobs:

@@ -1,4 +1,5 @@
 import express from "express";
+import lodash from "lodash";
 import { readFileSync } from "node:fs";
 
 const app = express();
@@ -171,7 +172,7 @@ app.get("/", (_req, res) => {
     <main>
       <span class="badge">Dockerfile build online</span>
       <h1>Rumpty Node v1</h1>
-      <p>This app runs a steady background workload so Rumpty deployment metrics have visible CPU and memory activity.</p>
+      <p>This app runs a steady background workload so Rumpty deployment metrics have visible CPU and memory activity. It also pins an intentionally vulnerable dependency so Rumpty security scans have something to report.</p>
       <dl>
         <dt>Started</dt><dd>${startedAt}</dd>
         <dt>Node</dt><dd>${process.version}</dd>
@@ -182,6 +183,7 @@ app.get("/", (_req, res) => {
         <dt>Memory limit</dt><dd>${memoryLimitBytes ? `${bytesToMb(memoryLimitBytes)} MB` : "not detected"}</dd>
         <dt>Phase</dt><dd>${workloadPhase}</dd>
         <dt>CPU burst</dt><dd>${workload.cpuMs} ms every ${workload.intervalMs} ms</dd>
+        <dt>Scan demo</dt><dd><code>lodash ${lodash.VERSION}</code></dd>
       </dl>
     </main>
   </body>
@@ -223,6 +225,28 @@ app.get("/payload", (_req, res) => {
     generated_at: new Date().toISOString(),
     size_kb: workload.networkKb,
     payload: makePayload(workload.networkKb),
+  });
+});
+
+app.get("/vulnerable-demo", (_req, res) => {
+  const sample = lodash.defaultsDeep(
+    { app: { name: "rumpty-node", scan_demo: true } },
+    { app: { dependency: "lodash", version: lodash.VERSION } },
+  );
+  console.log(JSON.stringify({
+    event: "vulnerable-demo-requested",
+    dependency: "lodash",
+    version: lodash.VERSION,
+    generated_at: new Date().toISOString(),
+  }));
+  res.json({
+    message: "This endpoint intentionally loads an old lodash version so vulnerability scans can be tested.",
+    dependency: {
+      name: "lodash",
+      version: lodash.VERSION,
+      intentionally_vulnerable: true,
+    },
+    sample,
   });
 });
 
